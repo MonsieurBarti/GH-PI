@@ -3,7 +3,7 @@
  */
 
 export const INSTALL_INSTRUCTIONS = `
-⚠️  GitHub CLI (gh) not found in PATH
+GitHub CLI (gh) not found in PATH.
 
 Install:
   macOS:    brew install gh

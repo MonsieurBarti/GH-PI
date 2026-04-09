@@ -21,19 +21,25 @@ import { createWorkflowTools } from "./workflow-tools";
 export default function ghExtension(pi: ExtensionAPI): void {
 	// Per-extension state — scoped to this invocation of the factory so that
 	// PI's `/reload` gives us a fresh slate instead of leaking into old
-	// handler closures.
+	// handler closures. The `gh` binary path is taken from GH_CLI_PATH when
+	// set, so users with a non-standard install can point us at it.
+	const binaryPath = process.env.GH_CLI_PATH ?? "gh";
 	const state = {
-		client: new GHClient({ exec: pi.exec.bind(pi) }),
+		client: new GHClient({ exec: pi.exec.bind(pi), binaryPath }),
 		detectionStatus: "unchecked" as "unchecked" | "missing" | "unauthenticated" | "ready",
 	};
 
 	/**
 	 * Probe the gh binary (and optionally auth). Caches the result on state.
 	 * Never throws — returns the outcome so callers can decide what to do.
+	 *
+	 * Uses the same binary path as the GHClient so GH_CLI_PATH is honored
+	 * end-to-end (probe and tool calls hit the same binary).
 	 */
 	async function probeBinary(): Promise<typeof state.detectionStatus> {
+		const bin = state.client.binaryPath;
 		try {
-			const versionResult = await pi.exec("gh", ["--version"], { timeout: 5000 });
+			const versionResult = await pi.exec(bin, ["--version"], { timeout: 5000 });
 			if (versionResult.code !== 0) {
 				state.detectionStatus = "missing";
 				return state.detectionStatus;
@@ -44,7 +50,7 @@ export default function ghExtension(pi: ExtensionAPI): void {
 		}
 
 		try {
-			const authResult = await pi.exec("gh", ["auth", "status"], { timeout: 5000 });
+			const authResult = await pi.exec(bin, ["auth", "status"], { timeout: 5000 });
 			state.detectionStatus = authResult.code === 0 ? "ready" : "unauthenticated";
 		} catch {
 			state.detectionStatus = "unauthenticated";
@@ -98,9 +104,15 @@ export default function ghExtension(pi: ExtensionAPI): void {
 	 *
 	 * PI's extension contract requires outputs to fit in ~50KB/2000 lines;
 	 * large gh outputs (pr diff, run logs, json listings) are truncated here
-	 * with a trailing notice.
+	 * with a trailing notice. Cancelled runs (exit 2) are surfaced explicitly
+	 * instead of masquerading as "Success".
 	 */
 	function formatOutput(result: ExecResult): string {
+		if (result.code === 2) {
+			const detail = result.stderr.trim() || result.stdout.trim();
+			return detail ? `gh command cancelled: ${detail}` : "gh command cancelled";
+		}
+
 		const raw = result.data ? JSON.stringify(result.data, null, 2) : result.stdout || "Success";
 
 		const truncation = truncateHead(raw);
@@ -275,11 +287,17 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				body: Type.Optional(Type.String({ description: "Issue body (markdown supported)" })),
 				number: Type.Optional(Type.Number({ description: "Issue number (for view, close, etc.)" })),
 				state: Type.Optional(StringEnum(["open", "closed", "all"] as const)),
-				assignee: Type.Optional(Type.String({ description: "Filter by assignee" })),
+				assignee: Type.Optional(Type.String({ description: "Filter by assignee (list)" })),
+				assignees: Type.Optional(Type.Array(Type.String(), { description: "Assignees (create)" })),
 				author: Type.Optional(Type.String({ description: "Filter by author" })),
 				labels: Type.Optional(Type.Array(Type.String(), { description: "Label names" })),
 				limit: Type.Optional(Type.Number({ description: "Max results for list" })),
-				milestone: Type.Optional(Type.String({ description: "Milestone name" })),
+				milestone: Type.Optional(
+					Type.String({ description: "Milestone name (create or list filter)" }),
+				),
+				projects: Type.Optional(
+					Type.Array(Type.String(), { description: "Project names (create)" }),
+				),
 				comment_text: Type.Optional(Type.String({ description: "Comment text" })),
 				reason: Type.Optional(StringEnum(["completed", "not_planned"] as const)),
 				add_labels: Type.Optional(Type.Array(Type.String())),
@@ -303,6 +321,9 @@ export default function ghExtension(pi: ExtensionAPI): void {
 								title: params.title,
 								body: params.body,
 								labels: params.labels,
+								assignees: params.assignees,
+								milestone: params.milestone,
+								projects: params.projects,
 							},
 							{ signal },
 						);
@@ -412,8 +433,9 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				repo: Type.String({ description: "Repository in owner/name format" }),
 				title: Type.Optional(Type.String({ description: "PR title (for create)" })),
 				body: Type.Optional(Type.String({ description: "PR body or review body" })),
-				head: Type.Optional(Type.String({ description: "Head branch (for create)" })),
-				base: Type.Optional(Type.String({ description: "Base branch (for create)" })),
+				head: Type.Optional(Type.String({ description: "Head branch (create, or list filter)" })),
+				base: Type.Optional(Type.String({ description: "Base branch (create, or list filter)" })),
+				author: Type.Optional(Type.String({ description: "Filter by author (list)" })),
 				number: Type.Optional(Type.Number({ description: "PR number" })),
 				state: Type.Optional(StringEnum(["open", "closed", "merged", "all"] as const)),
 				draft: Type.Optional(Type.Boolean()),
@@ -454,7 +476,14 @@ export default function ghExtension(pi: ExtensionAPI): void {
 
 					case "list":
 						result = await tools.list(
-							{ repo: params.repo, state: params.state, limit: params.limit },
+							{
+								repo: params.repo,
+								state: params.state,
+								head: params.head,
+								base: params.base,
+								author: params.author,
+								limit: params.limit,
+							},
 							{ signal },
 						);
 						break;

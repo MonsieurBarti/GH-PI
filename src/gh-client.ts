@@ -47,7 +47,7 @@ const RATE_LIMIT_PATTERNS = [
 
 export class GHClient {
 	private readonly piExec: PiExecFn;
-	private readonly binaryPath: string;
+	readonly binaryPath: string;
 
 	constructor(options: GHClientOptions) {
 		this.piExec = options.exec;
