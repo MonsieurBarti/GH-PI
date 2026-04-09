@@ -17,7 +17,8 @@
 		"format:fix": "biome format . --write",
 		"check": "biome check .",
 		"check:fix": "biome check . --write",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"prepare": "lefthook install || true"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
