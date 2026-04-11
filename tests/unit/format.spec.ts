@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatIssueList, formatIssueView, formatPRList, formatPRView } from "../../src/format";
+import {
+	formatIssueList,
+	formatIssueView,
+	formatPRList,
+	formatPRView,
+	formatRepoList,
+	formatRepoView,
+	formatWorkflowList,
+} from "../../src/format";
 
 describe("format", () => {
 	describe("formatPRList", () => {
@@ -177,6 +185,82 @@ describe("format", () => {
 
 			expect(result).toContain("Issue #10: Simple issue");
 			expect(result).toContain("CLOSED");
+		});
+	});
+
+	describe("formatRepoList", () => {
+		it("formats a list of repos as compact lines", () => {
+			const data = [
+				{
+					name: "GH-PI",
+					owner: { login: "MonsieurBarti" },
+					visibility: "PUBLIC",
+					description: "PI extension for GitHub CLI",
+					updatedAt: "2025-04-10T12:00:00Z",
+				},
+				{
+					name: "other-project",
+					owner: { login: "MonsieurBarti" },
+					visibility: "PRIVATE",
+					description: null,
+					updatedAt: "2025-03-15T00:00:00Z",
+				},
+			];
+
+			const result = formatRepoList(data);
+
+			expect(result).toContain("MonsieurBarti/GH-PI");
+			expect(result).toContain("PUBLIC");
+			expect(result).toContain("MonsieurBarti/other-project");
+			expect(result).toContain("PRIVATE");
+		});
+
+		it("returns 'No repositories found.' for empty list", () => {
+			expect(formatRepoList([])).toBe("No repositories found.");
+		});
+	});
+
+	describe("formatRepoView", () => {
+		it("formats a single repo as a compact summary", () => {
+			const data = {
+				name: "GH-PI",
+				owner: { login: "MonsieurBarti" },
+				description: "PI extension for GitHub CLI",
+				visibility: "PUBLIC",
+				stargazerCount: 3,
+				forkCount: 1,
+				defaultBranchRef: { name: "main" },
+				createdAt: "2025-01-01T00:00:00Z",
+				updatedAt: "2025-04-10T12:00:00Z",
+			};
+
+			const result = formatRepoView(data);
+
+			expect(result).toContain("MonsieurBarti/GH-PI");
+			expect(result).toContain("PUBLIC");
+			expect(result).toContain("PI extension for GitHub CLI");
+			expect(result).toContain("3");
+			expect(result).toContain("main");
+		});
+	});
+
+	describe("formatWorkflowList", () => {
+		it("formats a list of workflows as compact lines", () => {
+			const data = [
+				{ id: 1001, name: "CI Pipeline", path: ".github/workflows/ci.yml" },
+				{ id: 1002, name: "Release", path: ".github/workflows/release.yml" },
+			];
+
+			const result = formatWorkflowList(data);
+
+			expect(result).toContain("CI Pipeline");
+			expect(result).toContain("ci.yml");
+			expect(result).toContain("Release");
+			expect(result).toContain("release.yml");
+		});
+
+		it("returns 'No workflows found.' for empty list", () => {
+			expect(formatWorkflowList([])).toBe("No workflows found.");
 		});
 	});
 });

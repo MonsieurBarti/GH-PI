@@ -105,6 +105,73 @@ export function formatIssueList(data: unknown): string {
 	return lines.join("\n");
 }
 
+// -- Repo formatters --
+
+export function formatRepoList(data: unknown): string {
+	if (!Array.isArray(data) || data.length === 0) {
+		return "No repositories found.";
+	}
+
+	const lines = data.map((repo) => {
+		const fullName = `${authorLogin(repo.owner)}/${repo.name}`;
+		const visibility = repo.visibility ?? "";
+		const desc = repo.description ?? "";
+		const date = formatDate(repo.updatedAt);
+		return `${fullName}  ${visibility}  ${desc}  Updated ${date}`;
+	});
+
+	return lines.join("\n");
+}
+
+export function formatRepoView(data: unknown): string {
+	if (!data || typeof data !== "object") {
+		return "No repository data.";
+	}
+
+	const repo = data as Record<string, unknown>;
+	const fullName = `${authorLogin(repo.owner)}/${repo.name}`;
+	const header = `${fullName} [${repo.visibility}]`;
+
+	const desc = repo.description && typeof repo.description === "string" ? repo.description : "";
+
+	const stars = `stars: ${repo.stargazerCount ?? 0}`;
+	const forks = `forks: ${repo.forkCount ?? 0}`;
+	const defaultBranch =
+		repo.defaultBranchRef && typeof repo.defaultBranchRef === "object"
+			? `default branch: ${(repo.defaultBranchRef as Record<string, string>).name}`
+			: "";
+
+	const statsParts = [stars, forks, defaultBranch].filter(Boolean).join(" | ");
+	const createdDate = typeof repo.createdAt === "string" ? repo.createdAt : null;
+	const updatedDate = typeof repo.updatedAt === "string" ? repo.updatedAt : null;
+	const dates = `Created: ${formatDate(createdDate)} | Updated: ${formatDate(updatedDate)}`;
+
+	const lines = [header];
+	if (desc) lines.push(desc);
+	lines.push(statsParts, dates);
+
+	return lines.join("\n");
+}
+
+// -- Workflow formatters --
+
+export function formatWorkflowList(data: unknown): string {
+	if (!Array.isArray(data) || data.length === 0) {
+		return "No workflows found.";
+	}
+
+	const lines = data.map((wf) => {
+		const name = wf.name ?? "";
+		const file = typeof wf.path === "string" ? wf.path.split("/").pop() : "";
+		const id = wf.id ?? "";
+		return `${name}  ${file}  (id: ${id})`;
+	});
+
+	return lines.join("\n");
+}
+
+// -- Issue formatters --
+
 export function formatIssueView(data: unknown): string {
 	if (!data || typeof data !== "object") {
 		return "No issue data.";
