@@ -9,6 +9,15 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { defineTool, truncateHead } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { GHNotFoundError, getInstallInstructions } from "./error-handler";
+import {
+	formatIssueList,
+	formatIssueView,
+	formatPRList,
+	formatPRView,
+	formatRepoList,
+	formatRepoView,
+	formatWorkflowList,
+} from "./format";
 import { type ExecResult, GHClient } from "./gh-client";
 import { createIssueTools } from "./issue-tools";
 import { createPRTools } from "./pr-tools";
@@ -117,10 +126,18 @@ export default function ghExtension(pi: ExtensionAPI): void {
 	 * with a trailing notice. Cancelled runs (exit 2) are surfaced explicitly
 	 * instead of masquerading as "Success".
 	 */
-	function formatOutput(result: ExecResult): string {
+	function formatOutput(
+		result: ExecResult,
+		options?: { detail?: "summary" | "full"; summaryFormatter?: (data: unknown) => string },
+	): string {
 		if (result.code === 2) {
-			const detail = result.stderr.trim() || result.stdout.trim();
-			return detail ? `gh command cancelled: ${detail}` : "gh command cancelled";
+			const cancelDetail = result.stderr.trim() || result.stdout.trim();
+			return cancelDetail ? `gh command cancelled: ${cancelDetail}` : "gh command cancelled";
+		}
+
+		// Summary mode: use the formatter if we have parsed data and a formatter
+		if (options?.detail !== "full" && options?.summaryFormatter && result.data != null) {
+			return options.summaryFormatter(result.data);
 		}
 
 		const raw = result.data ? JSON.stringify(result.data, null, 2) : result.stdout || "Success";
@@ -182,6 +199,12 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				),
 				confirm: Type.Optional(Type.Boolean({ description: "Confirm destructive actions" })),
 				limit: Type.Optional(Type.Number({ description: "Max results for list" })),
+				detail: Type.Optional(
+					StringEnum(["summary", "full"] as const, {
+						description:
+							"Output detail level. 'summary' (default) returns compact text. 'full' returns raw JSON.",
+					}),
+				),
 			}),
 
 			async execute(_toolCallId, params, signal) {
@@ -270,8 +293,21 @@ export default function ghExtension(pi: ExtensionAPI): void {
 						throw new Error(`Unknown action: ${params.action}`);
 				}
 
+				const summaryFormatters: Record<string, (data: unknown) => string> = {
+					list: formatRepoList,
+					view: formatRepoView,
+				};
+
 				return {
-					content: [{ type: "text", text: formatOutput(result) }],
+					content: [
+						{
+							type: "text",
+							text: formatOutput(result, {
+								detail: params.detail,
+								summaryFormatter: summaryFormatters[params.action],
+							}),
+						},
+					],
 					details: { action: params.action, code: result.code },
 				};
 			},
@@ -326,6 +362,12 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				remove_labels: Type.Optional(Type.Array(Type.String())),
 				add_assignees: Type.Optional(Type.Array(Type.String())),
 				remove_assignees: Type.Optional(Type.Array(Type.String())),
+				detail: Type.Optional(
+					StringEnum(["summary", "full"] as const, {
+						description:
+							"Output detail level. 'summary' (default) returns compact text. 'full' returns raw JSON.",
+					}),
+				),
 			}),
 
 			async execute(_toolCallId, params, signal) {
@@ -424,8 +466,21 @@ export default function ghExtension(pi: ExtensionAPI): void {
 						throw new Error(`Unknown action: ${params.action}`);
 				}
 
+				const summaryFormatters: Record<string, (data: unknown) => string> = {
+					list: formatIssueList,
+					view: formatIssueView,
+				};
+
 				return {
-					content: [{ type: "text", text: formatOutput(result) }],
+					content: [
+						{
+							type: "text",
+							text: formatOutput(result, {
+								detail: params.detail,
+								summaryFormatter: summaryFormatters[params.action],
+							}),
+						},
+					],
 					details: { action: params.action, code: result.code },
 				};
 			},
@@ -478,6 +533,12 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				comment_text: Type.Optional(Type.String({ description: "Comment for close" })),
 				branch: Type.Optional(Type.String({ description: "Checkout branch name" })),
 				limit: Type.Optional(Type.Number({ description: "Max results for list" })),
+				detail: Type.Optional(
+					StringEnum(["summary", "full"] as const, {
+						description:
+							"Output detail level. 'summary' (default) returns compact text. 'full' returns raw JSON.",
+					}),
+				),
 			}),
 
 			async execute(_toolCallId, params, signal) {
@@ -589,8 +650,21 @@ export default function ghExtension(pi: ExtensionAPI): void {
 						throw new Error(`Unknown action: ${params.action}`);
 				}
 
+				const summaryFormatters: Record<string, (data: unknown) => string> = {
+					list: formatPRList,
+					view: formatPRView,
+				};
+
 				return {
-					content: [{ type: "text", text: formatOutput(result) }],
+					content: [
+						{
+							type: "text",
+							text: formatOutput(result, {
+								detail: params.detail,
+								summaryFormatter: summaryFormatters[params.action],
+							}),
+						},
+					],
 					details: { action: params.action, code: result.code },
 				};
 			},
@@ -624,6 +698,12 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				),
 				run_id: Type.Optional(Type.String({ description: "Run ID for logs" })),
 				limit: Type.Optional(Type.Number({ description: "Max results for list" })),
+				detail: Type.Optional(
+					StringEnum(["summary", "full"] as const, {
+						description:
+							"Output detail level. 'summary' (default) returns compact text. 'full' returns raw JSON.",
+					}),
+				),
 			}),
 
 			async execute(_toolCallId, params, signal) {
@@ -680,8 +760,20 @@ export default function ghExtension(pi: ExtensionAPI): void {
 						throw new Error(`Unknown action: ${params.action}`);
 				}
 
+				const summaryFormatters: Record<string, (data: unknown) => string> = {
+					list: formatWorkflowList,
+				};
+
 				return {
-					content: [{ type: "text", text: formatOutput(result) }],
+					content: [
+						{
+							type: "text",
+							text: formatOutput(result, {
+								detail: params.detail,
+								summaryFormatter: summaryFormatters[params.action],
+							}),
+						},
+					],
 					details: { action: params.action, code: result.code },
 				};
 			},
