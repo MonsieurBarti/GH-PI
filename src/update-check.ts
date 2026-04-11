@@ -1,7 +1,7 @@
 /**
  * Update check for GH-PI extension
  *
- * Fetches the latest release from GitHub and compares with current version
+ * Fetches the latest version from npm registry and compares with current version
  * to notify users when an update is available.
  */
 
@@ -12,11 +12,12 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+const PACKAGE_NAME = "@the-forge-flow/gh-pi";
+
 export interface UpdateInfo {
 	currentVersion: string;
 	latestVersion: string;
 	updateAvailable: boolean;
-	releaseUrl: string;
 }
 
 /**
@@ -50,45 +51,34 @@ function compareVersions(current: string, latest: string): boolean {
 }
 
 /**
- * Fetch latest release from GitHub API
- * Uses gh CLI if available, falls back to curl
+ * Fetch latest version from npm registry
+ * Uses npm view command, falls back to curl to registry API
  */
-async function fetchLatestRelease(): Promise<{ version: string; url: string } | null> {
-	const repo = "MonsieurBarti/GH-PI";
-	const url = `https://api.github.com/repos/${repo}/releases/latest`;
-
+async function fetchLatestVersion(): Promise<string | null> {
 	try {
-		// Try using gh CLI first (authenticated, better rate limits)
-		const result = execSync(
-			"gh api repos/MonsieurBarti/GH-PI/releases/latest --jq '.tag_name,.html_url'",
-			{
-				encoding: "utf-8",
-				timeout: 5000,
-				stdio: ["pipe", "pipe", "pipe"],
-			},
-		);
+		// Try using npm view (most reliable)
+		const result = execSync(`npm view ${PACKAGE_NAME} version`, {
+			encoding: "utf-8",
+			timeout: 5000,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
 
-		const lines = result.trim().split("\n");
-		if (lines.length >= 2) {
-			return {
-				version: lines[0],
-				url: lines[1],
-			};
+		const version = result.trim();
+		if (version) {
+			return version;
 		}
 	} catch {
-		// gh CLI not available or failed, fall back to curl
+		// npm not available or failed, try curl to registry API
 		try {
+			const url = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
 			const result = execSync(`curl -s ${url}`, {
 				encoding: "utf-8",
 				timeout: 5000,
 			});
 
-			const release = JSON.parse(result);
-			if (release.tag_name && release.html_url) {
-				return {
-					version: release.tag_name,
-					url: release.html_url,
-				};
+			const data = JSON.parse(result);
+			if (data.version) {
+				return data.version;
 			}
 		} catch {
 			// Silently fail - update check is not critical
@@ -104,18 +94,17 @@ async function fetchLatestRelease(): Promise<{ version: string; url: string } | 
  */
 export async function checkForUpdates(): Promise<UpdateInfo | null> {
 	const currentVersion = getCurrentVersion();
-	const latest = await fetchLatestRelease();
+	const latestVersion = await fetchLatestVersion();
 
-	if (!latest) {
+	if (!latestVersion) {
 		return null;
 	}
 
-	const updateAvailable = compareVersions(currentVersion, latest.version);
+	const updateAvailable = compareVersions(currentVersion, latestVersion);
 
 	return {
 		currentVersion,
-		latestVersion: latest.version,
+		latestVersion,
 		updateAvailable,
-		releaseUrl: latest.url,
 	};
 }
