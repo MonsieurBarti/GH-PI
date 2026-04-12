@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.4](https://github.com/MonsieurBarti/GH-PI/compare/gh-pi-v0.2.3...gh-pi-v0.2.4) (2026-04-12)
+
+
+### Bug Fixes
+
+* use explicit .js suffixes on relative imports (esm compliance) ([bb0020f](https://github.com/MonsieurBarti/GH-PI/commit/bb0020f8726252e22ad079cbb41b87088bb29934))
+* use explicit .js suffixes on relative imports (esm compliance) ([25d1ee6](https://github.com/MonsieurBarti/GH-PI/commit/25d1ee63e603caa34183b5df86a1d7aa3d0bcf87))
+
 ## [0.2.3](https://github.com/MonsieurBarti/GH-PI/compare/gh-pi-v0.2.2...gh-pi-v0.2.3) (2026-04-12)
 
 
