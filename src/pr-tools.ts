@@ -6,6 +6,11 @@
 
 import type { ExecOptions, GHClient } from "./gh-client";
 
+// Clamp list results so a runaway `limit` doesn't drag back thousands of
+// PRs. gh's default is 30; 200 is a generous ceiling that covers any
+// realistic agent workflow without blowing the output budget.
+const MAX_LIMIT = 200;
+
 export interface CreatePRParams {
 	repo: string;
 	title: string;
@@ -21,6 +26,7 @@ export interface ListPRsParams {
 	head?: string;
 	base?: string;
 	author?: string;
+	search?: string;
 	limit?: number;
 }
 
@@ -105,11 +111,17 @@ export function createPRTools(client: GHClient) {
 			if (params.author) {
 				args.push("--author", params.author);
 			}
+			if (params.search) {
+				args.push("--search", params.search);
+			}
 			if (params.limit) {
-				args.push("--limit", String(params.limit));
+				args.push("--limit", String(Math.min(params.limit, MAX_LIMIT)));
 			}
 
-			args.push("--json", "number,title,state,author,headRefName,baseRefName,updatedAt,createdAt");
+			args.push(
+				"--json",
+				"number,title,state,author,headRefName,baseRefName,updatedAt,createdAt,url",
+			);
 
 			return client.exec(args, options);
 		},
@@ -122,7 +134,7 @@ export function createPRTools(client: GHClient) {
 				"--repo",
 				params.repo,
 				"--json",
-				"number,title,body,state,author,headRefName,baseRefName,additions,deletions,files,merged,mergeable,statusCheckRollup",
+				"number,title,body,state,author,headRefName,baseRefName,additions,deletions,files,mergedAt,mergedBy,mergeable,statusCheckRollup",
 			];
 
 			return client.exec(args, options);

@@ -9,6 +9,15 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { defineTool, truncateHead } from "@mariozechner/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { GHNotFoundError, getInstallInstructions } from "./error-handler";
+import {
+	formatIssueList,
+	formatIssueView,
+	formatPRList,
+	formatPRView,
+	formatRepoList,
+	formatRepoView,
+	formatWorkflowList,
+} from "./format";
 import { type ExecResult, GHClient } from "./gh-client";
 import { createIssueTools } from "./issue-tools";
 import { createPRTools } from "./pr-tools";
@@ -117,10 +126,18 @@ export default function ghExtension(pi: ExtensionAPI): void {
 	 * with a trailing notice. Cancelled runs (exit 2) are surfaced explicitly
 	 * instead of masquerading as "Success".
 	 */
-	function formatOutput(result: ExecResult): string {
+	function formatOutput(
+		result: ExecResult,
+		options?: { detail?: "summary" | "full"; summaryFormatter?: (data: unknown) => string },
+	): string {
 		if (result.code === 2) {
-			const detail = result.stderr.trim() || result.stdout.trim();
-			return detail ? `gh command cancelled: ${detail}` : "gh command cancelled";
+			const cancelDetail = result.stderr.trim() || result.stdout.trim();
+			return cancelDetail ? `gh command cancelled: ${cancelDetail}` : "gh command cancelled";
+		}
+
+		// Summary mode: use the formatter if we have parsed data and a formatter
+		if (options?.detail !== "full" && options?.summaryFormatter && result.data != null) {
+			return options.summaryFormatter(result.data);
 		}
 
 		const raw = result.data ? JSON.stringify(result.data, null, 2) : result.stdout || "Success";
@@ -148,28 +165,43 @@ export default function ghExtension(pi: ExtensionAPI): void {
 			// readable.
 			name: "tff-github_repo",
 			label: "GitHub Repository",
-			description: "Manage GitHub repositories: create, clone, fork, list, view, delete, sync.",
+			description: `Manage GitHub repositories. Actions: create, clone, fork, list, view, delete, sync.
+
+Common patterns:
+- List your repos: action "list" (no owner needed)
+- List an org's repos: action "list" with owner "org-name"
+- View repo details: action "view" with owner and name
+- Create from template: action "create" with name and template "owner/template-repo"
+
+Output: returns compact summaries by default. Set detail "full" for raw JSON.
+For delete action, confirm: true is required — the tool will reject without it.`,
 			promptSnippet: "Work with GitHub repositories",
 			promptGuidelines: [
-				"Use for repository operations like creating, cloning, forking",
-				"Always specify the action parameter",
-				"For delete action, confirm: true is required",
-				"Repo names should be in owner/name format when required",
-				"Actions 'list' and 'view' are read-only (safe to call in parallel). Actions 'create', 'clone', 'fork', 'delete', 'sync' have side effects — run serially.",
+				"tff-github_repo: 'list' and 'view' are read-only (parallel-safe). 'create', 'clone', 'fork', 'delete', 'sync' have side effects — run serially",
+				"tff-github_repo: repo names use owner/name format for view, clone, fork, delete. Just the name for create",
 			],
 			parameters: Type.Object({
 				action: StringEnum(["create", "clone", "fork", "list", "view", "delete", "sync"] as const, {
 					description: "Repository action to perform",
 				}),
 				name: Type.Optional(
-					Type.String({ description: "Repository name (for create, view, delete)" }),
+					Type.String({
+						description:
+							"Repository name. For create: just the name. For view/delete: the repo name (also requires owner).",
+					}),
 				),
 				owner: Type.Optional(
 					Type.String({
-						description: "Repository owner (for fork, clone, view, delete)",
+						description:
+							"Repository owner (username or org). Required for clone, fork, view, delete. Optional for list (filters to that owner's repos).",
 					}),
 				),
-				visibility: Type.Optional(StringEnum(["public", "private", "internal"] as const)),
+				visibility: Type.Optional(
+					StringEnum(["public", "private", "internal"] as const, {
+						description:
+							"Repo visibility. For create: sets visibility. For list: filters by visibility.",
+					}),
+				),
 				description: Type.Optional(Type.String({ description: "Repository description" })),
 				template: Type.Optional(
 					Type.String({ description: "Template repository to use (owner/repo)" }),
@@ -180,8 +212,16 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				default_branch_only: Type.Optional(
 					Type.Boolean({ description: "Fork only default branch" }),
 				),
-				confirm: Type.Optional(Type.Boolean({ description: "Confirm destructive actions" })),
-				limit: Type.Optional(Type.Number({ description: "Max results for list" })),
+				confirm: Type.Optional(
+					Type.Boolean({ description: "Required for delete. Must be true to confirm deletion." }),
+				),
+				limit: Type.Optional(Type.Number({ description: "Max results for list. Defaults to 30." })),
+				detail: Type.Optional(
+					StringEnum(["summary", "full"] as const, {
+						description:
+							"Output detail level. 'summary' (default) returns compact text. 'full' returns raw JSON.",
+					}),
+				),
 			}),
 
 			async execute(_toolCallId, params, signal) {
@@ -270,8 +310,21 @@ export default function ghExtension(pi: ExtensionAPI): void {
 						throw new Error(`Unknown action: ${params.action}`);
 				}
 
+				const summaryFormatters: Record<string, (data: unknown) => string> = {
+					list: formatRepoList,
+					view: formatRepoView,
+				};
+
 				return {
-					content: [{ type: "text", text: formatOutput(result) }],
+					content: [
+						{
+							type: "text",
+							text: formatOutput(result, {
+								detail: params.detail,
+								summaryFormatter: summaryFormatters[params.action],
+							}),
+						},
+					],
 					details: { action: params.action, code: result.code },
 				};
 			},
@@ -285,13 +338,22 @@ export default function ghExtension(pi: ExtensionAPI): void {
 		defineTool({
 			name: "tff-github_issue",
 			label: "GitHub Issue",
-			description: "Manage GitHub issues: create, list, view, close, reopen, comment, edit.",
+			description: `Manage GitHub issues. Actions: create, list, view, close, reopen, comment, edit.
+
+Common patterns:
+- List open issues: action "list" with repo (defaults to open state)
+- Search issues by keyword: action "list" with search "query in:title,body"
+- Filter by label: action "list" with labels ["bug"]
+- Close as completed: action "close" with number and reason "completed"
+- Add labels to existing issue: action "edit" with number and add_labels
+
+Output: returns compact summaries by default. Set detail "full" for raw JSON.
+Issue numbers are required for view, close, reopen, comment, edit.`,
 			promptSnippet: "Work with GitHub issues",
 			promptGuidelines: [
-				"Use for issue operations like creating, listing, closing",
-				"Always specify the repo in owner/name format",
-				"Issue numbers are required for view, close, reopen, comment, edit",
-				"Actions 'list' and 'view' are read-only (safe to call in parallel). Actions 'create', 'close', 'reopen', 'comment', 'edit' have side effects — run serially.",
+				"tff-github_issue: use 'search' for keyword queries, 'labels' for label filtering, 'state' for state filtering (open/closed/all)",
+				"tff-github_issue: 'list' and 'view' are read-only (parallel-safe). 'create', 'close', 'reopen', 'comment', 'edit' have side effects — run serially",
+				"tff-github_issue: prefer a single 'list' with search/filters over multiple calls. Do not view each issue individually unless you need full detail",
 			],
 			parameters: Type.Object({
 				action: StringEnum(
@@ -302,11 +364,21 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				title: Type.Optional(Type.String({ description: "Issue title (for create)" })),
 				body: Type.Optional(Type.String({ description: "Issue body (markdown supported)" })),
 				number: Type.Optional(Type.Number({ description: "Issue number (for view, close, etc.)" })),
-				state: Type.Optional(StringEnum(["open", "closed", "all"] as const)),
+				state: Type.Optional(
+					StringEnum(["open", "closed", "all"] as const, {
+						description: "Filter by issue state. Defaults to 'open'.",
+					}),
+				),
 				assignee: Type.Optional(Type.String({ description: "Filter by assignee (list)" })),
 				assignees: Type.Optional(Type.Array(Type.String(), { description: "Assignees (create)" })),
 				author: Type.Optional(Type.String({ description: "Filter by author" })),
 				labels: Type.Optional(Type.Array(Type.String(), { description: "Label names" })),
+				search: Type.Optional(
+					Type.String({
+						description:
+							"Search query using GitHub search syntax. E.g., 'login bug in:title', 'label:bug is:open'. Maps to gh --search flag.",
+					}),
+				),
 				limit: Type.Optional(Type.Number({ description: "Max results for list" })),
 				milestone: Type.Optional(
 					Type.String({ description: "Milestone name (create or list filter)" }),
@@ -320,6 +392,12 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				remove_labels: Type.Optional(Type.Array(Type.String())),
 				add_assignees: Type.Optional(Type.Array(Type.String())),
 				remove_assignees: Type.Optional(Type.Array(Type.String())),
+				detail: Type.Optional(
+					StringEnum(["summary", "full"] as const, {
+						description:
+							"Output detail level. 'summary' (default) returns compact text. 'full' returns raw JSON.",
+					}),
+				),
 			}),
 
 			async execute(_toolCallId, params, signal) {
@@ -353,6 +431,7 @@ export default function ghExtension(pi: ExtensionAPI): void {
 								assignee: params.assignee,
 								author: params.author,
 								labels: params.labels,
+								search: params.search,
 								limit: params.limit,
 								milestone: params.milestone,
 							},
@@ -417,8 +496,21 @@ export default function ghExtension(pi: ExtensionAPI): void {
 						throw new Error(`Unknown action: ${params.action}`);
 				}
 
+				const summaryFormatters: Record<string, (data: unknown) => string> = {
+					list: formatIssueList,
+					view: formatIssueView,
+				};
+
 				return {
-					content: [{ type: "text", text: formatOutput(result) }],
+					content: [
+						{
+							type: "text",
+							text: formatOutput(result, {
+								detail: params.detail,
+								summaryFormatter: summaryFormatters[params.action],
+							}),
+						},
+					],
 					details: { action: params.action, code: result.code },
 				};
 			},
@@ -432,15 +524,22 @@ export default function ghExtension(pi: ExtensionAPI): void {
 		defineTool({
 			name: "tff-github_pr",
 			label: "GitHub Pull Request",
-			description:
-				"Manage GitHub pull requests: create, list, view, diff, merge, review, close, checkout.",
+			description: `Manage GitHub pull requests. Actions: create, list, view, diff, merge, review, close, checkout.
+
+Common patterns:
+- Find merged PRs: action "list" with state "merged"
+- Find PRs by branch: action "list" with head "branch-name"
+- Search PRs by keyword: action "list" with search "auth in:title,body"
+- Review a PR: first "view" to read it, then "diff" for changes, then "review"
+- Create a PR: requires title, head (source branch), and base (target branch)
+
+Output: returns compact summaries by default. Set detail "full" for raw JSON when you need specific field values.
+Do NOT chain list then view for every item. Use search/filters to narrow results first.`,
 			promptSnippet: "Work with GitHub pull requests",
 			promptGuidelines: [
-				"Use for PR operations like creating, merging, reviewing",
-				"Always specify the repo in owner/name format",
-				"PR numbers are required for view, merge, review, close, checkout",
-				"review_action 'request-changes' and 'comment' require a non-empty body",
-				"Actions 'list', 'view', and 'diff' are read-only (safe to call in parallel). Actions 'create', 'merge', 'review', 'close', 'checkout' have side effects — run serially.",
+				"tff-github_pr: use 'state' param to filter PRs (open/closed/merged/all), use 'search' for keyword queries",
+				"tff-github_pr: 'list', 'view', 'diff' are read-only (parallel-safe). 'create', 'merge', 'review', 'close', 'checkout' have side effects — run serially",
+				"tff-github_pr: prefer a single 'list' with search/filters over multiple calls. Do not view each PR individually unless you need full detail",
 			],
 			parameters: Type.Object({
 				action: StringEnum(
@@ -450,21 +549,53 @@ export default function ghExtension(pi: ExtensionAPI): void {
 				repo: Type.String({ description: "Repository in owner/name format" }),
 				title: Type.Optional(Type.String({ description: "PR title (for create)" })),
 				body: Type.Optional(Type.String({ description: "PR body or review body" })),
-				head: Type.Optional(Type.String({ description: "Head branch (create, or list filter)" })),
-				base: Type.Optional(Type.String({ description: "Base branch (create, or list filter)" })),
+				head: Type.Optional(
+					Type.String({
+						description:
+							"Head (source) branch. For create: required. For list: filters by head branch name.",
+					}),
+				),
+				base: Type.Optional(
+					Type.String({
+						description:
+							"Base (target) branch. For create: required. For list: filters by base branch name.",
+					}),
+				),
 				author: Type.Optional(Type.String({ description: "Filter by author (list)" })),
+				search: Type.Optional(
+					Type.String({
+						description:
+							"Search query using GitHub search syntax. E.g., 'auth in:title', 'label:bug sort:updated-desc'. Maps to gh --search flag.",
+					}),
+				),
 				number: Type.Optional(Type.Number({ description: "PR number" })),
-				state: Type.Optional(StringEnum(["open", "closed", "merged", "all"] as const)),
+				state: Type.Optional(
+					StringEnum(["open", "closed", "merged", "all"] as const, {
+						description: "Filter by PR state. Use 'merged' to find merged PRs. Defaults to 'open'.",
+					}),
+				),
 				draft: Type.Optional(Type.Boolean()),
-				method: Type.Optional(StringEnum(["merge", "squash", "rebase"] as const)),
+				method: Type.Optional(
+					StringEnum(["merge", "squash", "rebase"] as const, {
+						description: "Merge method. Defaults to the repo's configured default.",
+					}),
+				),
 				auto: Type.Optional(Type.Boolean({ description: "Enable auto-merge" })),
 				delete_branch: Type.Optional(Type.Boolean()),
 				review_action: Type.Optional(
-					StringEnum(["approve", "request-changes", "comment"] as const),
+					StringEnum(["approve", "request-changes", "comment"] as const, {
+						description: "Review action. 'request-changes' and 'comment' require a non-empty body.",
+					}),
 				),
 				comment_text: Type.Optional(Type.String({ description: "Comment for close" })),
 				branch: Type.Optional(Type.String({ description: "Checkout branch name" })),
 				limit: Type.Optional(Type.Number({ description: "Max results for list" })),
+				detail: Type.Optional(
+					StringEnum(["summary", "full"] as const, {
+						description:
+							"Output detail level. 'summary' (default) returns compact text. 'full' returns raw JSON.",
+					}),
+				),
 			}),
 
 			async execute(_toolCallId, params, signal) {
@@ -499,6 +630,7 @@ export default function ghExtension(pi: ExtensionAPI): void {
 								head: params.head,
 								base: params.base,
 								author: params.author,
+								search: params.search,
 								limit: params.limit,
 							},
 							{ signal },
@@ -575,8 +707,21 @@ export default function ghExtension(pi: ExtensionAPI): void {
 						throw new Error(`Unknown action: ${params.action}`);
 				}
 
+				const summaryFormatters: Record<string, (data: unknown) => string> = {
+					list: formatPRList,
+					view: formatPRView,
+				};
+
 				return {
-					content: [{ type: "text", text: formatOutput(result) }],
+					content: [
+						{
+							type: "text",
+							text: formatOutput(result, {
+								detail: params.detail,
+								summaryFormatter: summaryFormatters[params.action],
+							}),
+						},
+					],
 					details: { action: params.action, code: result.code },
 				};
 			},
@@ -590,26 +735,49 @@ export default function ghExtension(pi: ExtensionAPI): void {
 		defineTool({
 			name: "tff-github_workflow",
 			label: "GitHub Workflow",
-			description: "Manage GitHub Actions workflows: list, view, run, logs, disable, enable.",
+			description: `Manage GitHub Actions workflows. Actions: list, view, run, logs, disable, enable.
+
+Common patterns:
+- List workflows: action "list" with repo
+- View workflow YAML: action "view" with workflow name or filename
+- Trigger a run: action "run" with workflow name and optional branch/inputs
+- Get run logs: action "logs" with run_id (get run_id from GitHub or PR checks)
+
+Output: returns compact summaries by default for list. view and logs return raw text.
+Workflow can be referenced by name, numeric ID, or filename (e.g., "ci.yml").`,
 			promptSnippet: "Work with GitHub Actions workflows",
 			promptGuidelines: [
-				"Use for workflow operations like running, viewing logs",
-				"Always specify the repo in owner/name format",
-				"run_id is required for logs action",
-				"Actions 'list', 'view', and 'logs' are read-only (safe to call in parallel). Actions 'run', 'disable', 'enable' have side effects — run serially.",
+				"tff-github_workflow: 'list', 'view', 'logs' are read-only (parallel-safe). 'run', 'disable', 'enable' have side effects — run serially",
+				"tff-github_workflow: workflow param accepts name, numeric ID, or filename (e.g., 'ci.yml'). run_id is required for logs",
 			],
 			parameters: Type.Object({
 				action: StringEnum(["list", "view", "run", "logs", "disable", "enable"] as const, {
 					description: "Workflow action to perform",
 				}),
 				repo: Type.String({ description: "Repository in owner/name format" }),
-				workflow: Type.Optional(Type.String({ description: "Workflow name, ID, or filename" })),
+				workflow: Type.Optional(
+					Type.String({
+						description:
+							"Workflow name, numeric ID, or filename (e.g., 'ci.yml'). Required for view, run, disable, enable.",
+					}),
+				),
 				branch: Type.Optional(Type.String({ description: "Branch for workflow run" })),
 				inputs: Type.Optional(
 					Type.Record(Type.String(), Type.String(), { description: "Workflow inputs" }),
 				),
-				run_id: Type.Optional(Type.String({ description: "Run ID for logs" })),
+				run_id: Type.Optional(
+					Type.String({
+						description:
+							"Workflow run ID. Required for logs. Get this from GitHub UI or PR status checks.",
+					}),
+				),
 				limit: Type.Optional(Type.Number({ description: "Max results for list" })),
+				detail: Type.Optional(
+					StringEnum(["summary", "full"] as const, {
+						description:
+							"Output detail level. 'summary' (default) returns compact text. 'full' returns raw JSON.",
+					}),
+				),
 			}),
 
 			async execute(_toolCallId, params, signal) {
@@ -666,8 +834,20 @@ export default function ghExtension(pi: ExtensionAPI): void {
 						throw new Error(`Unknown action: ${params.action}`);
 				}
 
+				const summaryFormatters: Record<string, (data: unknown) => string> = {
+					list: formatWorkflowList,
+				};
+
 				return {
-					content: [{ type: "text", text: formatOutput(result) }],
+					content: [
+						{
+							type: "text",
+							text: formatOutput(result, {
+								detail: params.detail,
+								summaryFormatter: summaryFormatters[params.action],
+							}),
+						},
+					],
 					details: { action: params.action, code: result.code },
 				};
 			},

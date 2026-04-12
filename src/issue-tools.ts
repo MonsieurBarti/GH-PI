@@ -6,6 +6,8 @@
 
 import type { ExecOptions, GHClient } from "./gh-client";
 
+const MAX_LIMIT = 200;
+
 export interface CreateIssueParams {
 	repo: string;
 	title: string;
@@ -22,6 +24,7 @@ export interface ListIssuesParams {
 	assignee?: string;
 	author?: string;
 	labels?: string[];
+	search?: string;
 	limit?: number;
 	milestone?: string;
 	project?: string;
@@ -103,8 +106,11 @@ export function createIssueTools(client: GHClient) {
 			if (params.labels?.length) {
 				args.push("--label", params.labels.join(","));
 			}
+			if (params.search) {
+				args.push("--search", params.search);
+			}
 			if (params.limit) {
-				args.push("--limit", String(params.limit));
+				args.push("--limit", String(Math.min(params.limit, MAX_LIMIT)));
 			}
 			if (params.milestone) {
 				args.push("--milestone", params.milestone);

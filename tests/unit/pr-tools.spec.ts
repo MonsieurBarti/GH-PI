@@ -82,7 +82,40 @@ describe("pr-tools", () => {
 					"--limit",
 					"20",
 					"--json",
-					"number,title,state,author,headRefName,baseRefName,updatedAt,createdAt",
+					"number,title,state,author,headRefName,baseRefName,updatedAt,createdAt,url",
+				],
+				undefined,
+			);
+		});
+
+		it("clamps an excessive limit to 200", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "[]", stderr: "", data: [] });
+
+			await tools.list({ repo: "owner/repo", limit: 5000 });
+
+			expect(mockExec).toHaveBeenCalledWith(expect.arrayContaining(["--limit", "200"]), undefined);
+		});
+
+		it("lists PRs with search query", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "[]", stderr: "", data: [] });
+
+			await tools.list({
+				repo: "owner/repo",
+				search: "auth in:title",
+			});
+
+			expect(mockExec).toHaveBeenCalledWith(
+				[
+					"pr",
+					"list",
+					"--repo",
+					"owner/repo",
+					"--search",
+					"auth in:title",
+					"--json",
+					"number,title,state,author,headRefName,baseRefName,updatedAt,createdAt,url",
 				],
 				undefined,
 			);
@@ -112,7 +145,7 @@ describe("pr-tools", () => {
 					"--author",
 					"octocat",
 					"--json",
-					"number,title,state,author,headRefName,baseRefName,updatedAt,createdAt",
+					"number,title,state,author,headRefName,baseRefName,updatedAt,createdAt,url",
 				],
 				undefined,
 			);
@@ -120,7 +153,7 @@ describe("pr-tools", () => {
 	});
 
 	describe("view", () => {
-		it("views PR by number using statusCheckRollup field", async () => {
+		it("views PR by number with merge and check status fields", async () => {
 			const tools = createPRTools(mockClient);
 			mockExec.mockResolvedValue({ code: 0, stdout: "{}", stderr: "", data: {} });
 
@@ -134,7 +167,7 @@ describe("pr-tools", () => {
 					"--repo",
 					"owner/repo",
 					"--json",
-					"number,title,body,state,author,headRefName,baseRefName,additions,deletions,files,merged,mergeable,statusCheckRollup",
+					"number,title,body,state,author,headRefName,baseRefName,additions,deletions,files,mergedAt,mergedBy,mergeable,statusCheckRollup",
 				],
 				undefined,
 			);
