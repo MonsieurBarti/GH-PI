@@ -26,6 +26,62 @@ import { checkForUpdates } from "./update-check";
 import { createWorkflowTools } from "./workflow-tools";
 
 /**
+ * Library surface — named exports for consumers who want to use gh-pi's
+ * tool factories outside of a PI host (e.g., another PI extension wrapping
+ * GitHub operations). The default export below keeps the PI extension
+ * behavior unchanged.
+ */
+export { createGHClient, GHClient } from "./gh-client";
+export type { ExecOptions, ExecResult, PiExecFn } from "./gh-client";
+
+export { createPRTools } from "./pr-tools";
+export type {
+	ChecksParams,
+	CheckoutPRParams,
+	ClosePRParams,
+	CreatePRParams,
+	DiffPRParams,
+	ListPRsParams,
+	MergePRParams,
+	ReviewPRParams,
+	ViewPRParams,
+} from "./pr-tools";
+
+export { createIssueTools } from "./issue-tools";
+export type {
+	CloseIssueParams,
+	CommentOnIssueParams,
+	CreateIssueParams,
+	EditIssueParams,
+	ListIssuesParams,
+	ReopenIssueParams,
+	ViewIssueParams,
+} from "./issue-tools";
+
+export { createRepoTools } from "./repo-tools";
+export type {
+	CloneRepoParams,
+	CreateRepoParams,
+	DeleteRepoParams,
+	ForkRepoParams,
+	ListReposParams,
+	SyncRepoParams,
+	ViewRepoParams,
+} from "./repo-tools";
+
+export { createWorkflowTools } from "./workflow-tools";
+export type {
+	DisableWorkflowParams,
+	EnableWorkflowParams,
+	ListWorkflowsParams,
+	RunWorkflowParams,
+	ViewWorkflowParams,
+	WorkflowLogsParams,
+} from "./workflow-tools";
+
+export { GHAuthError, GHError, GHNotFoundError, GHRateLimitError } from "./error-handler";
+
+/**
  * Main extension export
  */
 export default function ghExtension(pi: ExtensionAPI): void {
