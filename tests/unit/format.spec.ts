@@ -263,4 +263,74 @@ describe("format", () => {
 			expect(formatWorkflowList([])).toBe("No workflows found.");
 		});
 	});
+
+	describe("edge cases", () => {
+		it("formatPRView reports pending/failing when any check is not passing", () => {
+			const data = {
+				number: 7,
+				title: "WIP",
+				state: "OPEN",
+				author: { login: "user" },
+				headRefName: "wip",
+				baseRefName: "main",
+				additions: 1,
+				deletions: 0,
+				files: [],
+				mergedAt: null,
+				mergeable: "MERGEABLE",
+				statusCheckRollup: [{ state: "SUCCESS" }, { conclusion: "FAILURE" }],
+				body: "",
+			};
+
+			const result = formatPRView(data);
+
+			expect(result).toContain("checks: pending/failing");
+			expect(result).not.toContain("checks: passing");
+		});
+
+		it("formatPRView truncates body over 200 chars with ellipsis", () => {
+			const longBody = "A".repeat(250);
+			const data = {
+				number: 8,
+				title: "Long",
+				state: "OPEN",
+				author: { login: "user" },
+				headRefName: "x",
+				baseRefName: "main",
+				additions: 0,
+				deletions: 0,
+				files: [],
+				mergedAt: null,
+				mergeable: "MERGEABLE",
+				statusCheckRollup: [],
+				body: longBody,
+			};
+
+			const result = formatPRView(data);
+
+			expect(result).toContain(`${"A".repeat(200)}...`);
+			expect(result).not.toContain("A".repeat(201));
+		});
+
+		it("formatPRList handles missing author object", () => {
+			const data = [
+				{
+					number: 9,
+					title: "Orphan PR",
+					state: "OPEN",
+					author: null,
+					headRefName: "feat/x",
+					baseRefName: "main",
+					updatedAt: "2025-04-10T12:00:00Z",
+				},
+			];
+
+			const result = formatPRList(data);
+
+			expect(result).toContain("#9");
+			expect(result).toContain("Orphan PR");
+			expect(result).toContain("unknown");
+			expect(result).not.toContain("null");
+		});
+	});
 });
