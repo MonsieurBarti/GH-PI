@@ -5,6 +5,7 @@
  * error handling and opt-in JSON parsing.
  */
 
+import { execFile } from "node:child_process";
 import { GHAuthError, GHError, GHRateLimitError } from "./error-handler";
 
 export interface ExecResult {
@@ -44,6 +45,63 @@ const RATE_LIMIT_PATTERNS = [
 	"rate limit exceeded",
 	"secondary rate limit",
 ];
+
+/**
+ * Build a default PiExecFn that shells out via node:child_process.execFile.
+ * Used when the library is consumed outside a PI host (no pi.exec available).
+ *
+ * Returns `{code, stdout, stderr, killed}` regardless of exit code — errors
+ * from execFile are normalized into the return shape, matching the contract
+ * that GHClient expects.
+ */
+function defaultNodeExec(): PiExecFn {
+	return async (command, args, options) => {
+		return new Promise((resolve) => {
+			const child = execFile(
+				command,
+				args,
+				{
+					timeout: options?.timeout,
+					maxBuffer: 64 * 1024 * 1024,
+				},
+				(err, stdout, stderr) => {
+					if (err) {
+						const e = err as Error & {
+							code?: number | string;
+							killed?: boolean;
+							signal?: string;
+						};
+						const numericCode = typeof e.code === "number" ? e.code : 1;
+						resolve({
+							code: numericCode,
+							stdout: stdout ?? "",
+							stderr: stderr ?? "",
+							killed: Boolean(e.killed),
+						});
+						return;
+					}
+					resolve({
+						code: 0,
+						stdout: stdout ?? "",
+						stderr: stderr ?? "",
+						killed: false,
+					});
+				},
+			);
+
+			if (options?.signal) {
+				const onAbort = () => {
+					child.kill();
+				};
+				if (options.signal.aborted) {
+					child.kill();
+				} else {
+					options.signal.addEventListener("abort", onAbort, { once: true });
+				}
+			}
+		});
+	};
+}
 
 export class GHClient {
 	private readonly piExec: PiExecFn;
@@ -97,4 +155,15 @@ export class GHClient {
 			data,
 		};
 	}
+}
+
+/**
+ * Library-friendly factory. Defaults `exec` to a node:child_process-based
+ * implementation, making the package usable outside a PI host.
+ */
+export function createGHClient(options?: { exec?: PiExecFn; binaryPath?: string }): GHClient {
+	return new GHClient({
+		exec: options?.exec ?? defaultNodeExec(),
+		binaryPath: options?.binaryPath,
+	});
 }

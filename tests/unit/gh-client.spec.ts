@@ -1,6 +1,12 @@
+import * as childProcess from "node:child_process";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GHAuthError, GHError, GHRateLimitError } from "../../src/error-handler";
-import { GHClient, type PiExecFn } from "../../src/gh-client";
+import { GHClient, type PiExecFn, createGHClient } from "../../src/gh-client";
+
+// Make node:child_process spyable in Vitest (its exports are non-configurable by default).
+vi.mock("node:child_process", () => ({
+	...require("node:child_process"),
+}));
 
 describe("GHClient", () => {
 	let mockExec: ReturnType<typeof vi.fn>;
@@ -169,5 +175,93 @@ describe("GHClient", () => {
 				expect((err as GHError).stdout).toBe("");
 			}
 		});
+	});
+});
+
+describe("createGHClient", () => {
+	it("returns a GHClient using the injected exec when provided", async () => {
+		const injectedExec = vi.fn().mockResolvedValue({
+			code: 0,
+			stdout: "ok",
+			stderr: "",
+		});
+
+		const client = createGHClient({ exec: injectedExec as unknown as PiExecFn });
+		const result = await client.exec(["--version"]);
+
+		expect(result.stdout).toBe("ok");
+		expect(injectedExec).toHaveBeenCalledWith("gh", ["--version"], expect.any(Object));
+	});
+
+	it("honors binaryPath override", async () => {
+		const injectedExec = vi.fn().mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+		const client = createGHClient({
+			exec: injectedExec as unknown as PiExecFn,
+			binaryPath: "/custom/gh",
+		});
+		await client.exec(["--version"]);
+		expect(injectedExec).toHaveBeenCalledWith("/custom/gh", ["--version"], expect.any(Object));
+	});
+
+	it("falls back to a node execFile-based exec when none is provided", async () => {
+		const execFileSpy = vi.spyOn(childProcess, "execFile").mockImplementation(((
+			_file: string,
+			_args: readonly string[],
+			_opts: unknown,
+			cb: (err: Error | null, stdout: string, stderr: string) => void,
+		) => {
+			cb(null, "default-exec-ok", "");
+			return {} as ReturnType<typeof childProcess.execFile>;
+		}) as unknown as typeof childProcess.execFile);
+
+		try {
+			const client = createGHClient();
+			const result = await client.exec(["--version"]);
+			expect(result.code).toBe(0);
+			expect(result.stdout).toBe("default-exec-ok");
+			expect(execFileSpy).toHaveBeenCalledWith(
+				"gh",
+				["--version"],
+				expect.any(Object),
+				expect.any(Function),
+			);
+		} finally {
+			execFileSpy.mockRestore();
+		}
+	});
+
+	it("default exec normalizes non-zero exits into {code, stdout, stderr}", async () => {
+		const execFileSpy = vi.spyOn(childProcess, "execFile").mockImplementation(((
+			_file: string,
+			_args: readonly string[],
+			_opts: unknown,
+			cb: (
+				err: (Error & { code?: number; stdout?: string; stderr?: string }) | null,
+				stdout: string,
+				stderr: string,
+			) => void,
+		) => {
+			const err = new Error("fail") as Error & {
+				code?: number;
+				stdout?: string;
+				stderr?: string;
+			};
+			err.code = 1;
+			err.stdout = "failing-check";
+			err.stderr = "boom";
+			cb(err, "failing-check", "boom");
+			return {} as ReturnType<typeof childProcess.execFile>;
+		}) as unknown as typeof childProcess.execFile);
+
+		try {
+			const client = createGHClient();
+			await expect(client.exec(["pr", "checks", "5"])).rejects.toMatchObject({
+				name: "GHError",
+				code: 1,
+				stdout: "failing-check",
+			});
+		} finally {
+			execFileSpy.mockRestore();
+		}
 	});
 });
