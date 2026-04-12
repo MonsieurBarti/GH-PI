@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GHAuthError, GHError, GHRateLimitError } from "../../src/error-handler";
 import { GHClient, type PiExecFn, createGHClient } from "../../src/gh-client";
 
-// Make node:child_process spyable in Vitest (its exports are non-configurable by default).
-vi.mock("node:child_process", () => ({
-	...require("node:child_process"),
-}));
+vi.mock("node:child_process", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:child_process")>();
+	return { ...actual };
+});
 
 describe("GHClient", () => {
 	let mockExec: ReturnType<typeof vi.fn>;
