@@ -136,5 +136,22 @@ describe("GHClient", () => {
 				expect.any(Object),
 			);
 		});
+
+		it("attaches stdout to GHError when command fails with stdout output", async () => {
+			mockExec.mockResolvedValue({
+				code: 1,
+				stdout: "check-lint failed\ncheck-typecheck failed",
+				stderr: "some checks were not successful",
+			});
+
+			try {
+				await client.exec(["pr", "checks", "5"]);
+				throw new Error("expected GHError to be thrown");
+			} catch (err) {
+				expect(err).toBeInstanceOf(GHError);
+				expect((err as GHError).code).toBe(1);
+				expect((err as GHError).stdout).toBe("check-lint failed\ncheck-typecheck failed");
+			}
+		});
 	});
 });

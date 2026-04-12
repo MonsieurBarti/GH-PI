@@ -77,7 +77,7 @@ export class GHClient {
 				throw new GHRateLimitError(result.stderr.trim());
 			}
 
-			throw new GHError(result.code, result.stderr);
+			throw new GHError(result.code, result.stderr, result.stdout);
 		}
 
 		// Parse JSON if --json flag was used and we have stdout.
