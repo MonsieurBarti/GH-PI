@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { GHAuthError, GHError } from "../../src/error-handler";
 import type { GHClient } from "../../src/gh-client";
 import { createPRTools } from "../../src/pr-tools";
 
@@ -167,7 +168,7 @@ describe("pr-tools", () => {
 					"--repo",
 					"owner/repo",
 					"--json",
-					"number,title,body,state,author,headRefName,baseRefName,additions,deletions,files,mergedAt,mergedBy,mergeable,statusCheckRollup",
+					"number,title,body,state,author,headRefName,baseRefName,additions,deletions,files,mergedAt,mergedBy,mergeable,statusCheckRollup,comments",
 				],
 				undefined,
 			);
@@ -360,6 +361,108 @@ describe("pr-tools", () => {
 				["pr", "checkout", "5", "--repo", "owner/repo", "--branch", "pr-review"],
 				undefined,
 			);
+		});
+	});
+
+	describe("checks", () => {
+		it("builds argv with no flags by default", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+
+			await tools.checks({ repo: "owner/repo", number: 5 });
+
+			expect(mockExec).toHaveBeenCalledWith(
+				["pr", "checks", "5", "--repo", "owner/repo"],
+				undefined,
+			);
+		});
+
+		it("adds --watch when watch is true", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+
+			await tools.checks({ repo: "owner/repo", number: 5, watch: true });
+
+			expect(mockExec).toHaveBeenCalledWith(
+				["pr", "checks", "5", "--repo", "owner/repo", "--watch"],
+				expect.objectContaining({ timeout: 600_000 }),
+			);
+		});
+
+		it("adds --required when required is true", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+
+			await tools.checks({ repo: "owner/repo", number: 5, required: true });
+
+			expect(mockExec).toHaveBeenCalledWith(
+				["pr", "checks", "5", "--repo", "owner/repo", "--required"],
+				undefined,
+			);
+		});
+
+		it("adds both --watch and --required when both set", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+
+			await tools.checks({
+				repo: "owner/repo",
+				number: 5,
+				watch: true,
+				required: true,
+			});
+
+			expect(mockExec).toHaveBeenCalledWith(
+				["pr", "checks", "5", "--repo", "owner/repo", "--watch", "--required"],
+				expect.objectContaining({ timeout: 600_000 }),
+			);
+		});
+
+		it("caller-provided timeout wins over the watch default", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+
+			await tools.checks({ repo: "owner/repo", number: 5, watch: true }, { timeout: 5000 });
+
+			expect(mockExec).toHaveBeenCalledWith(
+				["pr", "checks", "5", "--repo", "owner/repo", "--watch"],
+				expect.objectContaining({ timeout: 5000 }),
+			);
+		});
+
+		it("forwards signal through to client.exec", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+
+			const controller = new AbortController();
+			await tools.checks(
+				{ repo: "owner/repo", number: 5, watch: true },
+				{ signal: controller.signal },
+			);
+
+			expect(mockExec).toHaveBeenCalledWith(
+				expect.any(Array),
+				expect.objectContaining({ signal: controller.signal, timeout: 600_000 }),
+			);
+		});
+
+		it("returns ExecResult on check failure (GHError) instead of throwing", async () => {
+			const tools = createPRTools(mockClient);
+			const err = new GHError(1, "some checks were not successful", "check-lint\tfail");
+			mockExec.mockRejectedValue(err);
+
+			const result = await tools.checks({ repo: "owner/repo", number: 5 });
+
+			expect(result.code).toBe(1);
+			expect(result.stdout).toBe("check-lint\tfail");
+			expect(result.stderr).toContain("some checks were not successful");
+		});
+
+		it("still throws on auth errors", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockRejectedValue(new GHAuthError());
+
+			await expect(tools.checks({ repo: "owner/repo", number: 5 })).rejects.toThrow(GHAuthError);
 		});
 	});
 });

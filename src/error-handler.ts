@@ -53,10 +53,13 @@ export class GHRateLimitError extends Error {
  */
 export class GHError extends Error {
 	code: number;
+	/** Captured stdout from the failing gh invocation. Empty string if gh produced no stdout. */
+	stdout: string;
 
-	constructor(code: number, stderr: string) {
+	constructor(code: number, stderr: string, stdout = "") {
 		super(stderr.trim() || `gh CLI failed with exit code ${code}`);
 		this.name = "GHError";
 		this.code = code;
+		this.stdout = stdout;
 	}
 }
