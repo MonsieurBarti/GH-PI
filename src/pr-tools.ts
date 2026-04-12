@@ -4,7 +4,8 @@
  * GitHub pull request operations: create, list, view, diff, merge, review, close, checkout
  */
 
-import type { ExecOptions, GHClient } from "./gh-client";
+import { GHError } from "./error-handler";
+import type { ExecOptions, ExecResult, GHClient } from "./gh-client";
 
 // Clamp list results so a runaway `limit` doesn't drag back thousands of
 // PRs. gh's default is 30; 200 is a generous ceiling that covers any
@@ -65,6 +66,15 @@ export interface CheckoutPRParams {
 	repo: string;
 	number: number;
 	branch?: string;
+}
+
+export interface ChecksParams {
+	repo: string;
+	number: number;
+	/** If true, blocks until all checks complete (uses `gh pr checks --watch`). */
+	watch?: boolean;
+	/** If true, only consider required checks (uses `--required`). */
+	required?: boolean;
 }
 
 export function createPRTools(client: GHClient) {
@@ -208,6 +218,34 @@ export function createPRTools(client: GHClient) {
 			}
 
 			return client.exec(args, options);
+		},
+
+		async checks(params: ChecksParams, options?: ExecOptions): Promise<ExecResult> {
+			const args = ["pr", "checks", String(params.number), "--repo", params.repo];
+			if (params.watch) args.push("--watch");
+			if (params.required) args.push("--required");
+
+			// --watch can run for minutes; default to 10 min, caller-provided
+			// options.timeout wins via the spread ordering below.
+			const effectiveOptions: ExecOptions | undefined = params.watch
+				? { timeout: 600_000, ...options }
+				: options;
+
+			try {
+				return await client.exec(args, effectiveOptions);
+			} catch (err) {
+				// Surface failing checks as a structured ExecResult so the caller
+				// can read which checks failed (gh prints them on stdout). Other
+				// error types (auth, rate limit, not found) still propagate.
+				if (err instanceof GHError) {
+					return {
+						code: err.code,
+						stdout: err.stdout,
+						stderr: err.message,
+					};
+				}
+				throw err;
+			}
 		},
 	};
 }
