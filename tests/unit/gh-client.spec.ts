@@ -153,5 +153,21 @@ describe("GHClient", () => {
 				expect((err as GHError).stdout).toBe("check-lint failed\ncheck-typecheck failed");
 			}
 		});
+
+		it("defaults GHError.stdout to empty string when command fails with no stdout", async () => {
+			mockExec.mockResolvedValue({
+				code: 1,
+				stdout: "",
+				stderr: "boom",
+			});
+
+			try {
+				await client.exec(["repo", "view", "nope/nope"]);
+				throw new Error("expected GHError to be thrown");
+			} catch (err) {
+				expect(err).toBeInstanceOf(GHError);
+				expect((err as GHError).stdout).toBe("");
+			}
+		});
 	});
 });
