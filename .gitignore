@@ -3,5 +3,6 @@ dist
 .pi/
 .hippo/
 .worktrees/
+.tff/
 docs/plans
 docs/superpowers
