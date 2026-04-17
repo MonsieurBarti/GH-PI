@@ -221,7 +221,15 @@ export function createPRTools(client: GHClient) {
 		},
 
 		async checks(params: ChecksParams, options?: ExecOptions): Promise<ExecResult> {
-			const args = ["pr", "checks", String(params.number), "--repo", params.repo];
+			const args = [
+				"pr",
+				"checks",
+				String(params.number),
+				"--repo",
+				params.repo,
+				"--json",
+				"bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+			];
 			if (params.watch) args.push("--watch");
 			if (params.required) args.push("--required");
 
