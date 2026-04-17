@@ -365,14 +365,22 @@ describe("pr-tools", () => {
 	});
 
 	describe("checks", () => {
-		it("builds argv with no flags by default", async () => {
+		it("builds argv with --json by default", async () => {
 			const tools = createPRTools(mockClient);
 			mockExec.mockResolvedValue({ code: 0, stdout: "", stderr: "" });
 
 			await tools.checks({ repo: "owner/repo", number: 5 });
 
 			expect(mockExec).toHaveBeenCalledWith(
-				["pr", "checks", "5", "--repo", "owner/repo"],
+				[
+					"pr",
+					"checks",
+					"5",
+					"--repo",
+					"owner/repo",
+					"--json",
+					"bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+				],
 				undefined,
 			);
 		});
@@ -384,7 +392,16 @@ describe("pr-tools", () => {
 			await tools.checks({ repo: "owner/repo", number: 5, watch: true });
 
 			expect(mockExec).toHaveBeenCalledWith(
-				["pr", "checks", "5", "--repo", "owner/repo", "--watch"],
+				[
+					"pr",
+					"checks",
+					"5",
+					"--repo",
+					"owner/repo",
+					"--json",
+					"bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+					"--watch",
+				],
 				expect.objectContaining({ timeout: 600_000 }),
 			);
 		});
@@ -396,7 +413,16 @@ describe("pr-tools", () => {
 			await tools.checks({ repo: "owner/repo", number: 5, required: true });
 
 			expect(mockExec).toHaveBeenCalledWith(
-				["pr", "checks", "5", "--repo", "owner/repo", "--required"],
+				[
+					"pr",
+					"checks",
+					"5",
+					"--repo",
+					"owner/repo",
+					"--json",
+					"bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+					"--required",
+				],
 				undefined,
 			);
 		});
@@ -413,7 +439,17 @@ describe("pr-tools", () => {
 			});
 
 			expect(mockExec).toHaveBeenCalledWith(
-				["pr", "checks", "5", "--repo", "owner/repo", "--watch", "--required"],
+				[
+					"pr",
+					"checks",
+					"5",
+					"--repo",
+					"owner/repo",
+					"--json",
+					"bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+					"--watch",
+					"--required",
+				],
 				expect.objectContaining({ timeout: 600_000 }),
 			);
 		});
@@ -425,7 +461,16 @@ describe("pr-tools", () => {
 			await tools.checks({ repo: "owner/repo", number: 5, watch: true }, { timeout: 5000 });
 
 			expect(mockExec).toHaveBeenCalledWith(
-				["pr", "checks", "5", "--repo", "owner/repo", "--watch"],
+				[
+					"pr",
+					"checks",
+					"5",
+					"--repo",
+					"owner/repo",
+					"--json",
+					"bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+					"--watch",
+				],
 				expect.objectContaining({ timeout: 5000 }),
 			);
 		});
@@ -463,6 +508,42 @@ describe("pr-tools", () => {
 			mockExec.mockRejectedValue(new GHAuthError());
 
 			await expect(tools.checks({ repo: "owner/repo", number: 5 })).rejects.toThrow(GHAuthError);
+		});
+
+		it("adds --json with all fields for structured output", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "[]", stderr: "", data: [] });
+
+			await tools.checks({ repo: "owner/repo", number: 5 });
+
+			expect(mockExec).toHaveBeenCalledWith(
+				[
+					"pr",
+					"checks",
+					"5",
+					"--repo",
+					"owner/repo",
+					"--json",
+					"bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+				],
+				undefined,
+			);
+		});
+
+		it("includes --json with --watch flag", async () => {
+			const tools = createPRTools(mockClient);
+			mockExec.mockResolvedValue({ code: 0, stdout: "[]", stderr: "", data: [] });
+
+			await tools.checks({ repo: "owner/repo", number: 5, watch: true });
+
+			expect(mockExec).toHaveBeenCalledWith(
+				expect.arrayContaining([
+					"--json",
+					"bucket,completedAt,description,event,link,name,startedAt,state,workflow",
+					"--watch",
+				]),
+				expect.objectContaining({ timeout: 600_000 }),
+			);
 		});
 	});
 });
