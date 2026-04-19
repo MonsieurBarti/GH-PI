@@ -19,6 +19,7 @@ import {
 	formatRepoView,
 	formatWorkflowList,
 } from "./format.js";
+import { formatResponse } from "./formatter.js";
 import { type ExecResult, GHClient } from "./gh-client.js";
 import { createIssueTools } from "./issue-tools.js";
 import { createPRTools } from "./pr-tools.js";
@@ -194,12 +195,14 @@ export default function ghExtension(pi: ExtensionAPI): void {
 			return cancelDetail ? `gh command cancelled: ${cancelDetail}` : "gh command cancelled";
 		}
 
+		const cleanedData = formatResponse(result.data);
+
 		// Summary mode: use the formatter if we have parsed data and a formatter
-		if (options?.detail !== "full" && options?.summaryFormatter && result.data != null) {
-			return options.summaryFormatter(result.data);
+		if (options?.detail !== "full" && options?.summaryFormatter && cleanedData != null) {
+			return options.summaryFormatter(cleanedData);
 		}
 
-		const raw = result.data ? JSON.stringify(result.data, null, 2) : result.stdout || "Success";
+		const raw = cleanedData ? JSON.stringify(cleanedData, null, 2) : result.stdout || "Success";
 
 		const truncation = truncateHead(raw);
 		if (!truncation.truncated) {
