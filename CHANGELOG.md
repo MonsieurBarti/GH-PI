@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.6](https://github.com/MonsieurBarti/GH-PI/compare/gh-pi-v0.2.5...gh-pi-v0.2.6) (2026-04-19)
+
+
+### Features
+
+* **M01-S01:** wire pr-checks into tff-github_pr tool dispatch ([#21](https://github.com/MonsieurBarti/GH-PI/issues/21)) ([026a996](https://github.com/MonsieurBarti/GH-PI/commit/026a9961d7b173799e29264fd901349da9983a55))
+* **M01:** Quality & Completeness — pr-checks dispatch + update-check tests ([a5b5275](https://github.com/MonsieurBarti/GH-PI/commit/a5b52751944caa0e61f77d23e1a25b233c5f6336))
+* **M02:** Output Quality & PR Depth ([#27](https://github.com/MonsieurBarti/GH-PI/issues/27)) ([241d31d](https://github.com/MonsieurBarti/GH-PI/commit/241d31d9ddd9ad1bd27fac5fff709caf51e15adf))
+
 ## [0.2.5](https://github.com/MonsieurBarti/GH-PI/compare/gh-pi-v0.2.4...gh-pi-v0.2.5) (2026-04-15)
 
 
