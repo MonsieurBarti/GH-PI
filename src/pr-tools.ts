@@ -258,6 +258,7 @@ export function createPRTools(client: GHClient) {
 			options?: ExecOptions,
 		): Promise<ExecResult> {
 			const [owner, name] = params.repo.split("/");
+			// GitHub API defaults to 30 items/page; pagination is deferred (non-goal for this slice).
 			const args = ["api", `/repos/${owner}/${name}/pulls/${params.number}/comments`];
 			const result = await client.exec(args, options);
 			let data: unknown;
