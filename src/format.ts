@@ -24,14 +24,14 @@ interface BranchRef {
 	name?: string;
 }
 
+// -- PR shapes --
+
 interface ReviewComment {
 	path?: string | null;
 	line?: number | null;
 	user?: Actor | null;
 	body?: string | null;
 }
-
-// -- PR shapes --
 
 interface PRListItem {
 	number?: number;
@@ -185,6 +185,23 @@ export function formatPRView(data: unknown): string {
 	return lines.join("\n");
 }
 
+export function formatPRReviewComments(data: unknown): string {
+	if (!Array.isArray(data) || data.length === 0) {
+		return "No review comments.";
+	}
+
+	const items = data as ReviewComment[];
+	const lines = items.map((comment) => {
+		const location =
+			comment.path && comment.line != null ? `${comment.path}:${comment.line}` : "(general)";
+		const author = authorLogin(comment.user);
+		const body = truncateBody(comment.body, 500) ?? "";
+		return `${location}  ${author}  ${body}`;
+	});
+
+	return lines.join("\n");
+}
+
 // -- Issue formatters --
 
 export function formatIssueList(data: unknown): string {
@@ -298,23 +315,6 @@ export function formatWorkflowList(data: unknown): string {
 		const file = wf.path ? wf.path.split("/").pop() : "";
 		const id = wf.id ?? "";
 		return `${name}  ${file}  (id: ${id})`;
-	});
-
-	return lines.join("\n");
-}
-
-export function formatPRReviewComments(data: unknown): string {
-	if (!Array.isArray(data) || data.length === 0) {
-		return "No review comments.";
-	}
-
-	const items = data as ReviewComment[];
-	const lines = items.map((comment) => {
-		const location =
-			comment.path && comment.line != null ? `${comment.path}:${comment.line}` : "(general)";
-		const author = authorLogin(comment.user);
-		const body = truncateBody(comment.body, 500) ?? "";
-		return `${location}  ${author}  ${body}`;
 	});
 
 	return lines.join("\n");
